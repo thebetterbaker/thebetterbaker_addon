@@ -1,28 +1,94 @@
 bl_info = {
-    "name": "Better Baker",
-    "author": "Your Name",
-    "version": (2, 0),
-    "blender": (4, 0, 0),
-    "location": "View3D > Sidebar > Better Baker",
-    "description": "Multi-map queue baking engine with non-blocking UI layout windows",
+    "name": "The Better Baker",
+    "author": "Chaim Mendes",
+    "version": (1, 0),
+    "blender": (4, 2, 0),
+    "location": "Properties > Render > The Better Baker",
+    "description": "A no nonsense, reliable PBR baker that focuses on working.",
     "category": "Render",
 }
 
 import bpy
-from .bake_engine import bake_single_map
+import bpy.utils.previews
 
-# --- OPERATOR: EXECUTE MODAL BACKGROUND QUEUE BAKE ---
+from .bake_engine import betterbakerengine
+# --- 1. PROPERTY DEFINITIONS ---
+class BetterBakerSettings(bpy.types.PropertyGroup):
+    texture_size: bpy.props.EnumProperty(
+        name="Texture Size",
+        items=[
+            ('1K', "1K", "1024 x 1024"),
+            ('2K', "2K", "2048 x 2048"),
+            ('4K', "4K", "4096 x 4096"),
+            ('8K', "8K", "8192 x 8192"),
+            ('CUSTOM', "Custom", "Specify a custom resolution"),
+        ],
+        default='2K'
+    )
+    
+    custom_width: bpy.props.IntProperty(
+        name="Width", default=2048, min=16, max=16384
+    )
+    custom_height: bpy.props.IntProperty(
+        name="Height", default=2048, min=16, max=16384
+    )
+    prefix: bpy.props.StringProperty(
+        name="Prefix", default="T_"
+    )
+
+
+class BetterBakerTextureItem(bpy.types.PropertyGroup):
+    name: bpy.props.StringProperty(name="Texture Type")
+
+
+# --- 2. OPERATORS ---
+class BAKER_OT_add_texture_type(bpy.types.Operator):
+    """Add a texture type to the baking queue"""
+    bl_idname = "better_baker.add_texture"
+    bl_label = "Add Texture"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    texture_type: bpy.props.StringProperty()
+
+    def execute(self, context):
+        scene = context.scene
+        
+        # Check if this texture type is already in the list to avoid duplicates
+        for item in scene.better_baker_textures:
+            if item.name == self.texture_type:
+                self.report({'WARNING'}, f"{self.texture_type} is already in the list!")
+                return {'CANCELLED'}
+                
+        item = scene.better_baker_textures.add()
+        item.name = self.texture_type
+        
+        # Force the list index to select the newest item
+        scene.better_baker_idx = len(scene.better_baker_textures) - 1
+        return {'FINISHED'}
+
+
+class BAKER_OT_remove_texture_type(bpy.types.Operator):
+    """Remove the selected texture type from the queue"""
+    bl_idname = "better_baker.remove_texture"
+    bl_label = "Remove Texture"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        scene = context.scene
+        index = scene.better_baker_idx
+        
+        if index >= 0 and index < len(scene.better_baker_textures):
+            scene.better_baker_textures.remove(index)
+            scene.better_baker_idx = max(0, index - 1)
+        return {'FINISHED'}
+
+
 class BAKER_OT_render_bake(bpy.types.Operator):
-<<<<<<< HEAD
     """Execute the baking process asynchronously with real-time UI updates"""
-=======
-    """Execute the baking process with a live progress bar"""
->>>>>>> c5e196d721033f9de01f0df524ad775c0903720b
     bl_idname = "better_baker.render_bake"
     bl_label = "Render"
     
     _timer = None
-<<<<<<< HEAD
     _queue = []
     _total_maps = 0
 
@@ -59,76 +125,16 @@ class BAKER_OT_render_bake(bpy.types.Operator):
             except Exception as e:
                 self.report({'ERROR'}, f"Baking run encountered an error: {str(e)}")
                 return self.cancel(context)
-=======
-    images_to_show = []
-    current_index = 0
-    total_maps = 0
-
-    def modal(self, context, event):
-        scene = context.scene
-        wm = context.window_manager
-
-        if event.type == 'TIMER':
-            # Handle Final Completion Wrap Up
-            if self.current_index >= self.total_maps:
-                wm.progress_end()
-                main_window = context.window
-                
-                # STAGGERED PREVIEW WINDOWS
-                for img in self.images_to_show:
-                    if img:
-                        bpy.ops.screen.userpref_show('INVOKE_DEFAULT')
-                        new_window = wm.windows[-1]
-                        if new_window.screen and new_window.screen.areas:
-                            area = new_window.screen.areas[0]
-                            area.type = 'IMAGE_EDITOR'
-                            area.spaces.active.image = img
-                
-                # Restore system and focus controls
-                context.window_manager.windows[0].screen = main_window.screen
-                context.window.cursor_set("DEFAULT")
-                
-                self.report({'INFO'}, "Baking completed successfully!")
-                wm.event_timer_remove(self._timer)
-                return {'FINISHED'}
-
-            # Run Singular Map Bake Step Execution Loop
-            texture_item = scene.better_baker_textures[self.current_index]
-            wm.progress_update(self.current_index)
-            
-            try:
-                baked_img = bake_single_map(
-                    texture_item=texture_item,
-                    resolution_mode=scene.better_baker_settings.texture_size,
-                    settings=scene.better_baker_settings,
-                    prefix=scene.better_baker_settings.prefix
-                )
-                if baked_img:
-                    self.images_to_show.append(baked_img)
-            except Exception as e:
-                self.report({'ERROR'}, f"Baking failed at {texture_item.name}: {str(e)}")
-                wm.progress_end()
-                wm.event_timer_remove(self._timer)
-                context.window.cursor_set("DEFAULT")
-                return {'CANCELLED'}
-
-            self.current_index += 1
->>>>>>> c5e196d721033f9de01f0df524ad775c0903720b
 
         return {'RUNNING_MODAL'}
 
     def execute(self, context):
         scene = context.scene
-<<<<<<< HEAD
         settings = scene.better_baker_settings
-=======
-        wm = context.window_manager
->>>>>>> c5e196d721033f9de01f0df524ad775c0903720b
         
         if not scene.better_baker_textures:
             self.report({'WARNING'}, "Your texture baking list is empty!")
             return {'CANCELLED'}
-<<<<<<< HEAD
 
         self._queue = [item for item in scene.better_baker_textures]
         self._total_maps = len(self._queue)
@@ -199,24 +205,9 @@ class RENDER_PT_custom_bake_tools(bpy.types.Panel):
         col_render = layout.column()
         col_render.scale_y = 1.5
         col_render.operator("better_baker.render_bake", text="Render", icon='RENDER_STILL')
-=======
-            
-        self.images_to_show = []
-        self.current_index = 0
-        self.total_maps = len(scene.better_baker_textures)
-        
-        wm.progress_begin(0, self.total_maps)
-        context.window.cursor_set("WAIT")
-        
-        # Micro loop ticks every 0.1 seconds to yield GUI processing frames
-        self._timer = wm.event_timer_add(0.1, window=context.window)
-        wm.modal_handler_add(self)
-        
-        return {'RUNNING_MODAL'}
->>>>>>> c5e196d721033f9de01f0df524ad775c0903720b
 
 
-# --- MENU: TEXTURE DROPDOWN LIST OPTION SELECTION ---
+# --- 5. HELPER MENUS ---
 class BAKER_MT_texture_select_menu(bpy.types.Menu):
     """The dropdown selection box to populate the queue list"""
     bl_label = "Select Texture Map"
@@ -236,87 +227,46 @@ class BAKER_MT_texture_select_menu(bpy.types.Menu):
         layout.operator("better_baker.add_texture", text="Emission Strength").texture_type = "Emission Strength"
         layout.operator("better_baker.add_texture", text="Transmission Weight").texture_type = "Transmission Weight"
         layout.operator("better_baker.add_texture", text="Subsurface Weight").texture_type = "Subsurface Weight"
-<<<<<<< HEAD
         
         # Highly requested extras that work perfectly with your engine layout:
         layout.operator("better_baker.add_texture", text="Specular IOR Level").texture_type = "Specular IOR Level"
         layout.operator("better_baker.add_texture", text="Alpha").texture_type = "Alpha"
-=======
-        layout.operator("better_baker.add_texture", text="Specular IOR Level").texture_type = "Specular IOR Level"
-        layout.operator("better_baker.add_texture", text="Alpha").texture_type = "Alpha"
 
->>>>>>> c5e196d721033f9de01f0df524ad775c0903720b
-
-# --- EXTRA COMPONENT STUBS FOR COMPILATION RESTRAINTS ---
-class BAKER_IT_texture_item(bpy.types.PropertyGroup):
-    name: bpy.props.StringProperty(name="Map Name")
-
-class BAKER_ST_settings(bpy.types.PropertyGroup):
-    prefix: bpy.props.StringProperty(name="Prefix", default="Baked")
-    custom_width: bpy.props.IntProperty(name="Custom Width", default=2048, min=1)
-    texture_size: bpy.props.EnumProperty(
-        name="Size",
-        items=[('1K', '1K', ''), ('2K', '2K', ''), ('4K', '4K', ''), ('8K', '8K', ''), ('CUSTOM', 'Custom', '')],
-        default='2K'
-    )
-
-class BAKER_OT_add_texture(bpy.types.Operator):
-    bl_idname = "better_baker.add_texture"
-    bl_label = "Add Texture Map"
-    texture_type: bpy.props.StringProperty()
-    
-    def execute(self, context):
-        item = context.scene.better_baker_textures.add()
-        item.name = self.texture_type
-        return {'FINISHED'}
-
-class BAKER_PT_sidebar_panel(bpy.types.Panel):
-    bl_label = "Better Baker Engine"
-    bl_space_type = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category = 'Better Baker'
-
-    def draw(self, context):
-        layout = self.layout
-        scene = context.scene
-        
-        layout.prop(scene.better_baker_settings, "prefix")
-        layout.prop(scene.better_baker_settings, "texture_size")
-        if scene.better_baker_settings.texture_size == 'CUSTOM':
-            layout.prop(scene.better_baker_settings, "custom_width")
-            
-        layout.menu("BAKER_MT_texture_select_menu", text="Add Map To Queue...")
-        
-        box = layout.box()
-        for idx, item in enumerate(scene.better_baker_textures):
-            row = box.row()
-            row.label(text=item.name)
-            
-        layout.separator()
-        layout.operator("better_baker.render_bake", icon='RENDER_STILL')
-
-
-# --- REGISTRATION CORE FLOW ---
+# --- 6. REGISTER REGION ---
+preview_collections = {}
 classes = (
-    BAKER_IT_texture_item,
-    BAKER_ST_settings,
-    BAKER_OT_add_texture,
+    BetterBakerSettings,
+    BetterBakerTextureItem,
+    BAKER_OT_add_texture_type,
+    BAKER_OT_remove_texture_type,
     BAKER_OT_render_bake,
+    BAKER_UL_texture_list,       # Registered the UI List draw rules
     BAKER_MT_texture_select_menu,
-    BAKER_PT_sidebar_panel,
+    RENDER_PT_custom_bake_tools,
 )
 
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
-    bpy.types.Scene.better_baker_textures = bpy.props.CollectionProperty(type=BAKER_IT_texture_item)
-    bpy.types.Scene.better_baker_settings = bpy.props.PointerProperty(type=BAKER_ST_settings)
+        
+    bpy.types.Scene.better_baker_settings = bpy.props.PointerProperty(type=BetterBakerSettings)
+    bpy.types.Scene.better_baker_textures = bpy.props.CollectionProperty(type=BetterBakerTextureItem)
+    bpy.types.Scene.better_baker_idx = bpy.props.IntProperty(default=0)
+
+    pcoll = bpy.utils.previews.new()
+    preview_collections["main"] = pcoll
 
 def unregister():
+    for pcoll in list(preview_collections.values()):
+        bpy.utils.previews.remove(pcoll)
+    preview_collections.clear()
+
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
-    del bpy.types.Scene.better_baker_textures
+        
     del bpy.types.Scene.better_baker_settings
+    del bpy.types.Scene.better_baker_textures
+    del bpy.types.Scene.better_baker_idx
 
 if __name__ == "__main__":
     register()
