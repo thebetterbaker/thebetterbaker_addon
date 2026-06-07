@@ -84,37 +84,70 @@ class BAKER_OT_remove_texture_type(bpy.types.Operator):
 
 
 class BAKER_OT_render_bake(bpy.types.Operator):
-    """Execute the baking process"""
+    """Execute the baking process asynchronously with real-time UI updates"""
     bl_idname = "better_baker.render_bake"
     bl_label = "Render"
-    bl_options = {'REGISTER', 'UNDO'}
     
+    _timer = None
+    _queue = []
+    _total_maps = 0
+
+    def modal(self, context, event):
+        scene = context.scene
+        settings = scene.better_baker_settings
+
+        if event.type == 'TIMER':
+            # Safe completion sequence
+            if not self._queue:
+                context.area.tag_redraw()
+                self.report({'INFO'}, "Baking completed successfully!")
+                return self.cancel(context)
+
+            # Pop the next texture item off the processing sequence
+            current_item = self._queue.pop(0)
+            processed_count = self._total_maps - len(self._queue) - 1
+            context.area.tag_redraw()
+
+            try:
+                # Process single pass execution
+                bake_image = betterbakerengine([current_item], settings.texture_size, settings, settings.prefix)
+                
+                # Dynamic Image Viewer window spawning logic
+                if bake_image:
+                    bpy.ops.wm.window_new()
+                    new_win = context.window_manager.windows[-1]
+                    for area in new_win.screen.areas:
+                        if area.type in {'VIEW_3D', 'EMPTY'}:
+                            area.type = 'IMAGE_EDITOR'
+                            area.spaces.active.image = bake_image
+                            break
+
+            except Exception as e:
+                self.report({'ERROR'}, f"Baking run encountered an error: {str(e)}")
+                return self.cancel(context)
+
+        return {'RUNNING_MODAL'}
+
     def execute(self, context):
         scene = context.scene
+        settings = scene.better_baker_settings
         
-        # Check if the user actually added any textures to the list first
         if not scene.better_baker_textures:
             self.report({'WARNING'}, "Your texture baking list is empty!")
             return {'CANCELLED'}
-            
-        try:
-            # We pass the collection, the raw size string enum, the full settings group, and the text prefix
-            success = betterbakerengine(
-                textures_list=scene.better_baker_textures, 
-                resolution_mode=scene.better_baker_settings.texture_size, 
-                settings=scene.better_baker_settings,
-                prefix=scene.better_baker_settings.prefix
-            )
-            
-            if success:
-                self.report({'INFO'}, "Baking completed successfully!")
-                
-        except Exception as e:
-            self.report({'ERROR'}, f"Baking failed: {str(e)}")
-            return {'CANCELLED'}
-            
-        return {'FINISHED'}
 
+        self._queue = [item for item in scene.better_baker_textures]
+        self._total_maps = len(self._queue)
+
+        self._timer = context.window_manager.event_timer_add(0.1, window=context.window)
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def cancel(self, context):
+        if self._timer:
+            context.window_manager.event_timer_remove(self._timer)
+        return {'CANCELLED'}
+    
 # --- 3. UI LIST DRAW CLASS (The Missing Link) ---
 class BAKER_UL_texture_list(bpy.types.UIList):
     """This class explicitly dictates how items are drawn inside the text box row"""
@@ -139,59 +172,65 @@ class RENDER_PT_custom_bake_tools(bpy.types.Panel):
         scene = context.scene
         settings = scene.better_baker_settings
 
-        # Texture Size Buttons
-        layout.label(text="Texture Size:")
-        row = layout.row(align=True)
+        layout.active = True
+
+        # Isolate configurable options into an active toggle matrix
+        col_settings = layout.column()
+        
+        col_settings.label(text="Texture Size:")
+        row = col_settings.row(align=True)
         row.prop(settings, "texture_size", expand=True)
 
         if settings.texture_size == 'CUSTOM':
-            box = layout.box()
-            col = box.column(align=True)
-            col.prop(settings, "custom_width", text="Width (px)")
-            col.prop(settings, "custom_height", text="Height (px)")
+            box = col_settings.box()
+            col_px = box.column(align=True)
+            col_px.prop(settings, "custom_width", text="Width (px)")
+            col_px.prop(settings, "custom_height", text="Height (px)")
 
-        layout.separator()
+        col_settings.separator()
+        col_settings.prop(settings, "prefix")
+        col_settings.separator()
 
-        # Prefix Field
-        layout.prop(settings, "prefix")
-
-        layout.separator()
-
-        # Textures List Box
-        layout.label(text="Textures:")
+        col_settings.label(text="Textures:")
+        row_list = col_settings.row()
+        row_list.template_list("BAKER_UL_texture_list", "", scene, "better_baker_textures", scene, "better_baker_idx")
         
-        row = layout.row()
-        # We point template_list directly to our new 'BAKER_UL_texture_list' class layout
-        row.template_list(
-            "BAKER_UL_texture_list", "", 
-            scene, "better_baker_textures", 
-            scene, "better_baker_idx"
-        )
-        
-        col = row.column(align=True)
-        col.menu("BAKER_MT_texture_select_menu", icon='ADD', text="")
-        col.operator("better_baker.remove_texture", icon='REMOVE', text="")
+        col_btns = row_list.column(align=True)
+        col_btns.menu("BAKER_MT_texture_select_menu", icon='ADD', text="")
+        col_btns.operator("better_baker.remove_texture", icon='REMOVE', text="")
 
-        layout.separator(factor=2)
+        layout.separator(factor=1)
 
-        # Big Render Button
-        layout.scale_y = 1.5
-        layout.operator("better_baker.render_bake", icon='RENDER_STILL')
+        # Render execution zone
+        col_render = layout.column()
+        col_render.scale_y = 1.5
+        col_render.operator("better_baker.render_bake", text="Render", icon='RENDER_STILL')
 
 
 # --- 5. HELPER MENUS ---
 class BAKER_MT_texture_select_menu(bpy.types.Menu):
+    """The dropdown selection box to populate the queue list"""
     bl_label = "Select Texture Map"
+    bl_idname = "BAKER_MT_texture_select_menu"
 
     def draw(self, context):
         layout = self.layout
+        
+        # Mapping names cleanly to match Principled BSDF exactly
         layout.operator("better_baker.add_texture", text="Base Color").texture_type = "Base Color"
         layout.operator("better_baker.add_texture", text="Roughness").texture_type = "Roughness"
         layout.operator("better_baker.add_texture", text="Metallic").texture_type = "Metallic"
         layout.operator("better_baker.add_texture", text="Normal").texture_type = "Normal"
-        layout.operator("better_baker.add_texture", text="Ambient Occlusion").texture_type = "Ambient Occlusion"
-        layout.operator("better_baker.add_texture", text="Emissive").texture_type = "Emissive"
-
+        layout.operator("better_baker.add_texture", text="Clearcoat Weight").texture_type = "Clearcoat Weight"
+        layout.operator("better_baker.add_texture", text="Clearcoat Roughness").texture_type = "Clearcoat Roughness"
+        layout.operator("better_baker.add_texture", text="Emission Color").texture_type = "Emission Color"
+        layout.operator("better_baker.add_texture", text="Emission Strength").texture_type = "Emission Strength"
+        layout.operator("better_baker.add_texture", text="Transmission Weight").texture_type = "Transmission Weight"
+        layout.operator("better_baker.add_texture", text="Subsurface Weight").texture_type = "Subsurface Weight"
+        
+        # Highly requested extras that work perfectly with your engine layout:
+        layout.operator("better_baker.add_texture", text="Specular IOR Level").texture_type = "Specular IOR Level"
+        layout.operator("better_baker.add_texture", text="Alpha").texture_type = "Alpha"
 
 # --- 6. REGISTER REGION ---
 preview_collections = {}
