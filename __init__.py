@@ -2,7 +2,7 @@ bl_info = {
     "name": "The Better Baker",
     "author": "Chaim Mendes",
     "version": (1, 0),
-    "blender": (4, 2, 0),
+    "blender": (5, 1, 0),
     "location": "Properties > Render > The Better Baker",
     "description": "A no nonsense, reliable PBR baker that focuses on working.",
     "category": "Render",
