@@ -42,7 +42,7 @@ class BetterBakerSettings(bpy.types.PropertyGroup):
         name="Height", default=2048, min=16, max=16384
     )
     prefix: bpy.props.StringProperty(
-        name="Prefix", default="T_"
+        name="Prefix", default="tex_"
     )
 
 
@@ -95,7 +95,7 @@ class BAKER_OT_remove_texture_type(bpy.types.Operator):
 class BAKER_OT_render_bake(bpy.types.Operator):
     """Execute the baking process asynchronously with real-time UI updates"""
     bl_idname = "better_baker.render_bake"
-    bl_label = "Render"
+    bl_label = "Bake Selected"
     
     _timer = None
     _queue = []
@@ -144,6 +144,10 @@ class BAKER_OT_render_bake(bpy.types.Operator):
         if not scene.better_baker_textures:
             self.report({'WARNING'}, "Your texture baking list is empty!")
             return {'CANCELLED'}
+        
+        if not bpy.context.selected_objects:
+            self.report({'WARNING'}, "Select mesh objects to bake!")
+            return {'CANCELLED'}
 
         self._queue = [item for item in scene.better_baker_textures]
         self._total_maps = len(self._queue)
@@ -181,6 +185,8 @@ class RENDER_PT_custom_bake_tools(bpy.types.Panel):
         scene = context.scene
         settings = scene.better_baker_settings
 
+        # Avoid modifying ID datablocks during UI draw (not allowed).
+        # Default textures are initialized when operators run instead.
         layout.active = True
 
         # Isolate configurable options into an active toggle matrix

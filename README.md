@@ -1,4 +1,6 @@
-# thebetterbaker_addon
+# The Better Baker Addon for Blender
+
+### This version of the addon is compatible with Blender 5.1 and above.
 
 This is a Blender addon that allows users to easily bake textures for their 3D models.
 
