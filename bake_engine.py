@@ -295,31 +295,40 @@ def bake_single_map(texture_item, resolution_mode, settings, prefix, objects=Non
             m = bpy.data.materials.get(mat_name)
             if not m: continue
             
+            # Restore the original surface connection if we replaced it
+            if temp_emit and orig_link:
+                out = next((n for n in m.node_tree.nodes if n.type == 'OUTPUT_MATERIAL'), None)
+                if out:
+                    m.node_tree.links.new(orig_link, out.inputs['Surface'])
+
+            # Remove temporary bake nodes created for this material
+            for temp_node in (temp_emit, temp_tex):
+                if temp_node and temp_node.name in m.node_tree.nodes:
+                    try:
+                        m.node_tree.nodes.remove(temp_node)
+                    except Exception:
+                        pass
+
             # Clean up any TEMP_BAKE_MIX nodes left by trace_channel_source
             for node in list(m.node_tree.nodes):
                 if node.name == "TEMP_BAKE_MIX":
                     m.node_tree.nodes.remove(node)
-            
-            if temp_emit:
-                out = next((n for n in m.node_tree.nodes if n.type == 'OUTPUT_MATERIAL'), None)
-                if orig_link and out:
-                    m.node_tree.links.new(orig_link, out.inputs['Surface'])
 
     return bake_image
 
-def betterbakerengine(textures_list, resolution_mode, settings, prefix):
+def betterbakerengine(textures_list, resolution_mode, settings, prefix, objects=None):
     """Entrypoint used by the addon to bake texture items for all selected objects together."""
     if not textures_list:
         return None
 
-    # Get all selected mesh objects
-    selected_objects = [obj for obj in bpy.context.selected_objects if obj.type == 'MESH']
-    if not selected_objects:
+    if objects is None:
+        objects = [obj for obj in bpy.context.selected_objects if obj.type == 'MESH']
+    if not objects:
         return None
 
     results = []
     for texture_item in textures_list:
-        result = bake_single_map(texture_item, resolution_mode, settings, prefix, objects=selected_objects)
+        result = bake_single_map(texture_item, resolution_mode, settings, prefix, objects=objects)
         if result:
             results.append(result)
     

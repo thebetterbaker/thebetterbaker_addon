@@ -1,22 +1,3 @@
-# -----------------------------------------------------------------------------
-# Copyright (c) 2026 Your Name.
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-# -----------------------------------------------------------------------------
-
-bl_info = {
-    "name": "The Better Baker",
-    "author": "Chaim Mendes",
-    "version": (1, 0),
-    "blender": (5, 1, 0),
-    "location": "Properties > Render > The Better Baker",
-    "description": "A no nonsense, reliable PBR baker that focuses on working.",
-    "category": "Render",
-}
-
 import bpy
 import bpy.utils.previews
 
@@ -43,6 +24,12 @@ class BetterBakerSettings(bpy.types.PropertyGroup):
     )
     prefix: bpy.props.StringProperty(
         name="Prefix", default="tex_"
+    )
+    
+    single_material_target: bpy.props.PointerProperty(
+        name="Target Material",
+        type=bpy.types.Material,
+        description="The material whose node tree you want to bake"
     )
 
 
@@ -106,34 +93,55 @@ class BAKER_OT_render_bake(bpy.types.Operator):
         settings = scene.better_baker_settings
 
         if event.type == 'TIMER':
-            # Safe completion sequence
             if not self._queue:
-                context.area.tag_redraw()
+                # Force a final redraw pass across every open window/area
+                for win in context.window_manager.windows:
+                    for area in win.screen.areas:
+                        area.tag_redraw()
                 self.report({'INFO'}, "Baking completed successfully!")
                 return self.cancel(context)
 
-            # Pop the next texture item off the processing sequence
             current_item = self._queue.pop(0)
             processed_count = self._total_maps - len(self._queue) - 1
             context.area.tag_redraw()
 
             try:
-                # Process single pass execution
-                bake_image = betterbakerengine([current_item], settings.texture_size, settings, settings.prefix)
-                
-                # Dynamic Image Viewer window spawning logic
-                if bake_image:
-                    bpy.ops.wm.window_new()
-                    new_win = context.window_manager.windows[-1]
-                    for area in new_win.screen.areas:
-                        if area.type in {'VIEW_3D', 'EMPTY'}:
-                            area.type = 'IMAGE_EDITOR'
-                            area.spaces.active.image = bake_image
-                            break
+                # Run the bake on the created plane using the regular bake viewer flow
+                for texture_item in scene.better_baker_textures:
+                    bake_image = betterbakerengine(
+                        [texture_item],
+                        settings.texture_size,
+                        settings,
+                        settings.prefix,
+                        objects=[plane_obj]
+                    )
 
-            except Exception as e:
-                self.report({'ERROR'}, f"Baking run encountered an error: {str(e)}")
-                return self.cancel(context)
+                    if bake_image:
+                        bpy.ops.wm.window_new()
+                        new_win = context.window_manager.windows[-1]
+                        target_area = None
+                        for area in new_win.screen.areas:
+                            if area.type in {'VIEW_3D', 'EMPTY'}:
+                                target_area = area
+                                break
+                        if target_area is None and new_win.screen.areas:
+                            target_area = new_win.screen.areas[0]
+                        if target_area is not None:
+                            target_area.type = 'IMAGE_EDITOR'
+                            target_area.spaces.active.image = bake_image
+                            target_area.tag_redraw()
+
+                # Force a final redraw pass across every open window/area
+                for win in context.window_manager.windows:
+                    for area in win.screen.areas:
+                        area.tag_redraw()
+
+            finally:
+                # Clean up the temporary plane after baking
+                bpy.ops.object.select_all(action='DESELECT')
+                plane_obj.select_set(True)
+                context.view_layer.objects.active = plane_obj
+                bpy.ops.object.delete()
 
         return {'RUNNING_MODAL'}
 
@@ -160,6 +168,79 @@ class BAKER_OT_render_bake(bpy.types.Operator):
         if self._timer:
             context.window_manager.event_timer_remove(self._timer)
         return {'CANCELLED'}
+
+class BAKER_OT_bake_single_material(bpy.types.Operator):
+    """Create a temporary flat plane, assign the material, and run the pre-existing bake function"""
+    bl_idname = "better_baker.single_material_bake"
+    bl_label = "Bake Single Material Flat"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        scene = context.scene
+        settings = scene.better_baker_settings
+        
+        if not settings.single_material_target:
+            self.report({'WARNING'}, "Please select a material first!")
+            return {'CANCELLED'}
+
+        if not scene.better_baker_textures:
+            self.report({'WARNING'}, "Your texture baking list is empty!")
+            return {'CANCELLED'}
+
+        mat = settings.single_material_target
+
+        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.mesh.primitive_plane_add(size=2, enter_editmode=False, align='WORLD')
+        plane_obj = context.active_object
+        plane_obj.name = f"BakePlane_{mat.name}"
+
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.uv.unwrap(method='ANGLE_BASED', margin=0.001)
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        if len(plane_obj.data.materials) == 0:
+            plane_obj.data.materials.append(mat)
+        else:
+            plane_obj.data.materials[0] = mat
+
+        plane_obj.select_set(True)
+        context.view_layer.objects.active = plane_obj
+
+        try:
+            # Run the bake on the created plane using the regular bake viewer flow
+            for texture_item in scene.better_baker_textures:
+                bake_image = betterbakerengine(
+                    [texture_item],
+                    settings.texture_size,
+                    settings,
+                    settings.prefix,
+                    objects=[plane_obj]
+                )
+
+                if bake_image:
+                    bpy.ops.wm.window_new()
+                    new_win = context.window_manager.windows[-1]
+                    target_area = None
+                    for area in new_win.screen.areas:
+                        if area.type in {'VIEW_3D', 'EMPTY'}:
+                            target_area = area
+                            break
+                    if target_area is None and new_win.screen.areas:
+                        target_area = new_win.screen.areas[0]
+                    if target_area is not None:
+                        target_area.type = 'IMAGE_EDITOR'
+                        image_space = next((s for s in target_area.spaces if s.type == 'IMAGE_EDITOR'), target_area.spaces.active)
+                        image_space.image = bake_image
+                        target_area.tag_redraw()
+        finally:
+            # Clean up the temporary plane after baking
+            bpy.ops.object.select_all(action='DESELECT')
+            plane_obj.select_set(True)
+            context.view_layer.objects.active = plane_obj
+            bpy.ops.object.delete()
+
+        return {'FINISHED'}
     
 # --- 3. UI LIST DRAW CLASS (The Missing Link) ---
 class BAKER_UL_texture_list(bpy.types.UIList):
@@ -216,11 +297,19 @@ class RENDER_PT_custom_bake_tools(bpy.types.Panel):
 
         layout.separator(factor=1)
 
-        # Render execution zone
+        layout.separator()
+        box_single = layout.box()
+        box_single.label(text="Bake Single Material", icon='MATERIAL')
+        box_single.prop(settings, "single_material_target", text="")
+        box_single.operator("better_baker.single_material_bake", text="Setup & Bake Material", icon='PLAY')
+        layout.separator(factor=1)
+        
+        # Regular layout bake button
         col_render = layout.column()
         col_render.scale_y = 1.5
+        
+        # The regular button doesn't set the flag, so it defaults to False safely
         col_render.operator("better_baker.render_bake", text="Render", icon='RENDER_STILL')
-
 
 # --- 5. HELPER MENUS ---
 class BAKER_MT_texture_select_menu(bpy.types.Menu):
@@ -255,7 +344,8 @@ classes = (
     BAKER_OT_add_texture_type,
     BAKER_OT_remove_texture_type,
     BAKER_OT_render_bake,
-    BAKER_UL_texture_list,       # Registered the UI List draw rules
+    BAKER_OT_bake_single_material,
+    BAKER_UL_texture_list,
     BAKER_MT_texture_select_menu,
     RENDER_PT_custom_bake_tools,
 )
