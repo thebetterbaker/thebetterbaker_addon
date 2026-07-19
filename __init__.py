@@ -97,6 +97,7 @@ class BAKER_OT_remove_texture_type(bpy.types.Operator):
             scene.better_baker_idx = max(0, index - 1)
         return {'FINISHED'}
 
+# Making Reusable Snipits for future
 
 class BAKER_OT_render_bake(bpy.types.Operator):
     """Execute the baking process asynchronously with real-time UI updates"""
@@ -167,16 +168,50 @@ class BAKER_OT_bake_single_material(bpy.types.Operator):
     bl_label = "Bake Single Material"
     bl_options = {'REGISTER', 'UNDO'}
 
+    _timer = None
+    _queue = []
+    _total_maps = 0
+
+    def modal(self, context, event):
+        scene = context.scene
+        settings = scene.better_baker_settings
+
+        if event.type == 'TIMER':
+            # Safe completion sequence
+            if not self._queue:
+                context.area.tag_redraw()
+                self.report({'INFO'}, "Baking completed successfully!")
+                return self.cancel(context)
+
+            # Pop the next texture item off the processing sequence
+            current_item = self._queue.pop(0)
+            processed_count = self._total_maps - len(self._queue) - 1
+            context.area.tag_redraw()
+
+            try:
+                # Process single pass execution
+                bake_image = betterbakerengine([current_item], settings.texture_size, settings, settings.prefix)
+                
+                # Dynamic Image Viewer window spawning logic
+                if bake_image:
+                    spawn_image_viewer(context, bake_image)
+
+            except Exception as e:
+                self.report({'ERROR'}, f"Baking run encountered an error: {str(e)}")
+                return self.cancel(context)
+
+        return {'RUNNING_MODAL'}
+
     def execute(self, context):
         scene = context.scene
         settings = scene.better_baker_settings
         
-        if not settings.single_material_target:
-            self.report({'WARNING'}, "Please select a material first!")
-            return {'CANCELLED'}
-
         if not scene.better_baker_textures:
             self.report({'WARNING'}, "Your texture baking list is empty!")
+            return {'CANCELLED'}
+        
+        if not bpy.context.selected_objects:
+            self.report({'WARNING'}, "Select mesh objects to bake!")
             return {'CANCELLED'}
 
         mat = settings.single_material_target
@@ -184,7 +219,8 @@ class BAKER_OT_bake_single_material(bpy.types.Operator):
         bpy.ops.object.select_all(action='DESELECT')
         bpy.ops.mesh.primitive_plane_add(size=2, enter_editmode=False, align='WORLD')
         plane_obj = context.active_object
-        plane_obj.name = f"BakePlane_{mat.name}"
+        plane_obj.name = f"TheBetterBaker_{mat.name}_bakeplane"
+        self._temp_plane = plane_obj
 
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.mesh.select_all(action='SELECT')
@@ -195,31 +231,23 @@ class BAKER_OT_bake_single_material(bpy.types.Operator):
             plane_obj.data.materials.append(mat)
         else:
             plane_obj.data.materials[0] = mat
+        
+        self._queue = [item for item in scene.better_baker_textures]
+        self._total_maps = len(self._queue)
 
-        plane_obj.select_set(True)
-        context.view_layer.objects.active = plane_obj
+        self._timer = context.window_manager.event_timer_add(0.1, window=context.window)
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
 
-        try:
-            # Run the bake on the created plane using the regular bake viewer flow
-            for texture_item in scene.better_baker_textures:
-                bake_image = betterbakerengine(
-                    [texture_item],
-                    settings.texture_size,
-                    settings,
-                    settings.prefix,
-                    objects=[plane_obj]
-                )
-
-                if bake_image:
-                    spawn_image_viewer(context, bake_image)
-        finally:
-            # Clean up the temporary plane after baking
-            bpy.ops.object.select_all(action='DESELECT')
-            plane_obj.select_set(True)
-            context.view_layer.objects.active = plane_obj
-            bpy.ops.object.delete()
-
-        return {'FINISHED'}
+    def cancel(self, context):
+        if self._timer:
+            context.window_manager.event_timer_remove(self._timer)
+        bpy.ops.object.select_all(action='DESELECT')
+        self._temp_plane.select_set(True)
+        context.view_layer.objects.active = self._temp_plane
+        bpy.ops.object.delete()
+        return {'CANCELLED'}
+    
     
 # --- 3. UI LIST DRAW CLASS (The Missing Link) ---
 class BAKER_UL_texture_list(bpy.types.UIList):
@@ -282,6 +310,13 @@ class RENDER_PT_custom_bake_tools(bpy.types.Panel):
         
         # The regular button doesn't set the flag, so it defaults to False safely
         col_render.operator("better_baker.render_bake", text="Render", icon='RENDER_STILL')
+
+        layout.separator()
+        col_render = layout.box()
+        col_render.label(text="Bake Single Material", icon='MATERIAL')
+        col_render.label(text="Bakes all the materials from all selected objects into one material. UV map's required.")
+        col_render.operator("better_baker.render_bake", text="Bake Selected Objct", icon='PLAY')
+        layout.separator(factor=1)
 
         layout.separator()
         box_single = layout.box()
