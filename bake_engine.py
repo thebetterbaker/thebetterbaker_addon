@@ -42,16 +42,16 @@ def trace_channel_source(socket, target_channel, tree):
         # RECURSION: Pass the shader slots directly back into the pipeline
         src1 = trace_channel_source(from_node.inputs[1], target_channel, tree)
         src2 = trace_channel_source(from_node.inputs[2], target_channel, tree)
-        print(f"mix shader node - src 1 : {src1}")
-        print(f"mix shader node - src 2 : {src2}")
+        # print(f"mix shader node - src 1 : {src1}")
+        # print(f"mix shader node - src 2 : {src2}")
         # Connect Slot 1 data to our new Mix Color node
         if isinstance(src1, bpy.types.NodeSocket):
             if src1.is_output:
                 tree.links.new(src1, mix_node.inputs[input1_name])
-                print("linked as output")
+                # print("linked as output")
             elif src1.is_linked:
                 tree.links.new(src1.links[0].from_socket, mix_node.inputs[input1_name])
-                print("linked as link")
+                # print("linked as link")
             else:
                 val = src1.default_value
                 mix_node.inputs[input1_name].default_value = val if hasattr(val, '__len__') and len(val) == 4 else (val, val, val, 1.0)
@@ -60,16 +60,16 @@ def trace_channel_source(socket, target_channel, tree):
         if isinstance(src2, bpy.types.NodeSocket):
             if src2.is_output:
                 tree.links.new(src2, mix_node.inputs[input2_name])
-                print("linked as output")
+                # print("linked as output")
             elif src2.is_linked:
                 tree.links.new(src2.links[0].from_socket, mix_node.inputs[input2_name])
-                print("linked as link")
+                # print("linked as link")
             else:
-                print("linked as fail")
+                # print("linked as fail")
                 val = src2.default_value
                 mix_node.inputs[input2_name].default_value = val if hasattr(val, '__len__') and len(val) == 4 else (val, val, val, 1.0)
 
-        print(f"------attepting to return {mix_node.outputs[0]}")
+        # print(f"------attepting to return {mix_node.outputs[0]}")
         color_output = next((o for o in mix_node.outputs if o.type == 'RGBA'), None)
         return color_output if color_output else mix_node.outputs[0]
     
@@ -171,42 +171,42 @@ def bake_single_map(texture_item, resolution_mode, settings, prefix, objects=Non
     try:
         # --- CONDITION A: STANDARD CHANNELS VIA EMISSION ---
         if ui_name != "Normal":
-            print(f"--- Starting Bake for Channel: {ui_name} ---")
+            # print(f"--- Starting Bake for Channel: {ui_name} ---")
             scene.render.bake.use_pass_direct = False
             scene.render.bake.use_pass_indirect = False
             scene.render.bake.use_pass_color = True
             bake_type_to_use = 'EMIT'
 
             for obj in objects:
-                print(f"Checking Object: {obj.name}")
+                # print(f"Checking Object: {obj.name}")
                 for slot in obj.material_slots:
                     mat = slot.material
-                    if not mat: 
-                        print(f"  Skipped: Slot is empty")
-                        continue
-                    if not mat.use_nodes: 
-                        print(f"  Skipped: Material '{mat.name}' does not use nodes")
-                        continue
+                    # if not mat: 
+                    #     print(f"  Skipped: Slot is empty")
+                    #     continue
+                    # if not mat.use_nodes: 
+                    #     print(f"  Skipped: Material '{mat.name}' does not use nodes")
+                    #     continue
                         
                     nodes = mat.node_tree.nodes
                     links = mat.node_tree.links
                     
                     node_output = next((n for n in nodes if n.type == 'OUTPUT_MATERIAL'), None)
-                    if not node_output:
-                        print(f"  Skipped: Material '{mat.name}' has no Output node")
-                        continue
-                    if not node_output.inputs['Surface'].is_linked: 
-                        print(f"  Skipped: Material '{mat.name}' Output Surface is not linked")
-                        continue
+                    # if not node_output:
+                    #     print(f"  Skipped: Material '{mat.name}' has no Output node")
+                    #     continue
+                    # if not node_output.inputs['Surface'].is_linked: 
+                    #     print(f"  Skipped: Material '{mat.name}' Output Surface is not linked")
+                    #     continue
 
-                    print(f"  Processing Material: {mat.name}")
+                    # print(f"  Processing Material: {mat.name}")
 
                     # Create bake elements
                     node_emit = nodes.new(type='ShaderNodeEmission')
                     node_tex = nodes.new(type='ShaderNodeTexImage')
                     node_tex.image = bake_image
                     nodes.active = node_tex
-                    print(f"    Created temporary nodes successfully!")
+                    # print(f"    Created temporary nodes successfully!")
                     
                     # Store data for cleanup later
                     orig_link = node_output.inputs['Surface'].links[0].from_socket
@@ -216,27 +216,27 @@ def bake_single_map(texture_item, resolution_mode, settings, prefix, objects=Non
                     # Trace back from Output Node to find our targeted source data
                     nodes.active = node_tex
                     final_source = trace_channel_source(node_output.inputs['Surface'], target_socket_name, mat.node_tree)
-                    print(f"    Traced back to source: {final_source}")
+                    # print(f"    Traced back to source: {final_source}")
 
-                    for node in mat.node_tree.nodes:
-                        if "TEMP_BAKE_MIX" in node.name:
-                            print(f"TEMP_BAKE_MIX found: {node.name}")
-                            for inp in node.inputs:
-                                print(f"  Input '{inp.name}': is_linked={inp.is_linked}, default={getattr(inp, 'default_value', 'N/A')}")
-                            for out in node.outputs:
-                                print(f"  Output '{out.name}': is_linked={out.is_linked}")
+                    # for node in mat.node_tree.nodes:
+                    #     if "TEMP_BAKE_MIX" in node.name:
+                    #         print(f"TEMP_BAKE_MIX found: {node.name}")
+                    #         for inp in node.inputs:
+                    #             print(f"  Input '{inp.name}': is_linked={inp.is_linked}, default={getattr(inp, 'default_value', 'N/A')}")
+                    #         for out in node.outputs:
+                    #             print(f"  Output '{out.name}': is_linked={out.is_linked}")
                     if final_source:
                         print(f"    Processing final_source: {final_source} (Node: {final_source.node.bl_idname if hasattr(final_source, 'node') else 'None'})")
                         
                         # CASE 1: It's an output socket (The temporary Mix node output from your recursion)
                         if hasattr(final_source, 'is_output') and final_source.is_output:
                             mat.node_tree.links.new(final_source, node_emit.inputs['Color'])
-                            print("    [LINKED] Output socket directly to Emission Color.")
+                            # print("    [LINKED] Output socket directly to Emission Color.")
                             
                         # CASE 2: It's an input socket that has an active wire connection
                         elif hasattr(final_source, 'is_linked') and final_source.is_linked:
                             mat.node_tree.links.new(final_source.links[0].from_socket, node_emit.inputs['Color'])
-                            print(f"    [LINKED] Upstream socket {final_source.links[0].from_socket} to Emission Color.")
+                            # print(f"    [LINKED] Upstream socket {final_source.links[0].from_socket} to Emission Color.")
                             
                         # CASE 3: It's an unlinked input socket with a default numeric/color value
                         elif hasattr(final_source, 'default_value'):
@@ -295,7 +295,7 @@ def bake_single_map(texture_item, resolution_mode, settings, prefix, objects=Non
             m = bpy.data.materials.get(mat_name)
             if not m: continue
             
-            # Restore the original surface connection if we replaced it
+            # Restore the original surface connection if it was replaced
             if temp_emit and orig_link:
                 out = next((n for n in m.node_tree.nodes if n.type == 'OUTPUT_MATERIAL'), None)
                 if out:
