@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "thebetterbaker"
-version = "4.0.0"
+version = "4.0.1"
 name = "The Better Baker - PBR Baker"
 tagline = "A PBR baker for multiple objects and complex materials"
 maintainer = "Chaim Mendes"
@@ -10,7 +10,7 @@ type = "add-on"
 website = "https://thebetterbaker.github.io/"
 
 # # https://docs.blender.org/manual/en/dev/advanced/extensions/tags.html
-tags = ["Bake", "Game Engine", "Paint"]
+tags = ["Bake"]
 
 blender_version_min = "5.1.0"
 
