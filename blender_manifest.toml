@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "thebetterbaker"
-version = "4.0.1"
+version = "4.1.0"
 name = "The Better Baker - PBR Baker"
 tagline = "A PBR baker for multiple objects and complex materials"
 maintainer = "Chaim Mendes"
@@ -28,7 +28,8 @@ license = [
 
 # to zip (In Windows) run
 # & "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" --command extension build --source .
-
+# to zip (In Linux) run
+# /opt/blender/blender --command extension build --source .
 paths_exclude_pattern = [
   "__pycache__/",
   "/.git/",
