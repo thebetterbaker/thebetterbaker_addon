@@ -172,10 +172,25 @@ def bake_single_map(texture_item, resolution_mode, settings, prefix, objects=Non
         # --- CONDITION A: STANDARD CHANNELS VIA EMISSION ---
         if ui_name != "Normal":
             # print(f"--- Starting Bake for Channel: {ui_name} ---")
+            scene.render.bake.use_clear = False
             scene.render.bake.use_pass_direct = False
             scene.render.bake.use_pass_indirect = False
             scene.render.bake.use_pass_color = True
             bake_type_to_use = 'EMIT'
+
+            non_color_channels = {
+                "Roughness", "Metallic", "Clearcoat Weight", "Clearcoat Roughness", 
+                "Emission Strength", "Transmission Weight", "Subsurface Weight", 
+                "Specular IOR Level", "Alpha"
+            }
+
+            if ui_name in non_color_channels:
+                # Pre-fill flat float list efficiently
+                initial_pixels = [0.5, 0.5, 0.5, 1.0] * (res_w * res_h)
+                bake_image.pixels.foreach_set(initial_pixels)
+                bake_image.update()
+            else:
+                scene.render.bake.use_clear = True
 
             for obj in objects:
                 # print(f"Checking Object: {obj.name}")
@@ -268,6 +283,8 @@ def bake_single_map(texture_item, resolution_mode, settings, prefix, objects=Non
         else:
             bake_type_to_use = 'NORMAL'
             scene.render.bake.normal_space = 'TANGENT'
+            normal_color = (0.5, 0.5, 1.0, 1.0)
+            bake_image.pixels.foreach_set(normal_color * (res_w * res_h))
 
             for obj in objects:
                 for slot in obj.material_slots:
@@ -289,6 +306,7 @@ def bake_single_map(texture_item, resolution_mode, settings, prefix, objects=Non
         bpy.context.view_layer.objects.active = objects[0]
         
         bpy.ops.object.bake(type=bake_type_to_use, save_mode='INTERNAL')
+        bake_image.gl_free()
 
     finally:
         for mat_name, (orig_link, temp_emit, temp_tex) in mat_data.items():

@@ -38,23 +38,31 @@ class BetterBakerTextureItem(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="Texture Type")
 
 def spawn_image_viewer(context, image):
-    """Safely spawns a new window"""
+    # 1. Search current screen areas first
     if not image:
         return
-        
-    bpy.ops.wm.window_new()
-    # Grab the newly created window
-    new_win = context.window_manager.windows[-1]
-    
-    for area in new_win.screen.areas:
-        if area.type in {'VIEW_3D', 'EMPTY', 'IMAGE_EDITOR'}:
-            area.type = 'IMAGE_EDITOR'
-            for space in area.spaces:
-                if space.type == 'IMAGE_EDITOR':
-                    space.image = image
-                    break
-            break
+    for area in context.screen.areas:
+        if area.type == 'IMAGE_EDITOR':
+            prev = area.spaces.active.image
+            if prev and prev != image:
+                prev.gl_free()
+            area.spaces.active.image = image
+            return
 
+    # 2. Search existing open windows before spawning new ones
+    for win in context.window_manager.windows:
+        for area in win.screen.areas:
+            if area.type == 'IMAGE_EDITOR':
+                area.spaces.active.image = image
+                return
+
+    # 3. Only spawn ONE new window if no editor exists anywhere
+    bpy.ops.wm.window_new()
+    new_win = context.window_manager.windows[-1]
+    for area in new_win.screen.areas:
+        area.type = 'IMAGE_EDITOR'
+        area.spaces.active.image = image
+        break
 # --- MENU OPERATORS ---
 class BAKER_OT_add_texture_type(bpy.types.Operator):
     """Add a texture type from the queue"""
