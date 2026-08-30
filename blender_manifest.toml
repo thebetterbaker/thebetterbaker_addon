@@ -9,12 +9,9 @@ type = "add-on"
 
 website = "https://thebetterbaker.github.io/"
 
-# # https://docs.blender.org/manual/en/dev/advanced/extensions/tags.html
 tags = ["Bake"]
 
 blender_version_min = "5.1.0"
-
-permissions = ["files"]
 
 # Max Currently Unknown
 # tested variants
@@ -28,13 +25,18 @@ license = [
   "SPDX:GPL-3.0-or-later",
 ]
 
-# to zip (In Windows) run
-# & "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" --command extension build --source .
-# to zip (In Linux) run
-# /opt/blender/blender --command extension build --source .
 paths_exclude_pattern = [
   "__pycache__/",
   "/.git/",
   "/*.zip",
   "/.gitignore",
 ]
+
+# Permissions defined as a table mapping permission names to justification strings
+[permissions]
+files = "Save baked textures to disk"
+
+# to zip (In Windows) run
+# & "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" --command extension build --source .
+# to zip (In Linux) run
+# /opt/blender/blender --command extension build --source .
