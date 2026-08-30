@@ -33,6 +33,24 @@ class BetterBakerSettings(bpy.types.PropertyGroup):
         description="The material whose node tree you want to bake"
     )
 
+    use_udims: bpy.props.BoolProperty(
+        name="Use UDIMs",
+        description="Enable UDIM texture baking support",
+        default=False
+    )
+
+    save_to_folder: bpy.props.BoolProperty(
+            name="Save to Folder",
+            description="Save baked textures to a specified folder",
+            default=False
+    )
+
+    export_folder: bpy.props.StringProperty(
+        name="Export Folder",
+        description="Select folder to save baked maps",
+        subtype='DIR_PATH',
+        default="/tmp/"
+    )
 
 class BetterBakerTextureItem(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="Texture Type")
@@ -367,6 +385,28 @@ class BAKER_MT_texture_select_menu(bpy.types.Menu):
         layout.operator("better_baker.add_texture", text="Specular IOR Level").texture_type = "Specular IOR Level"
         layout.operator("better_baker.add_texture", text="Alpha").texture_type = "Alpha"
 
+class OBJECT_PT_Advanced(bpy.types.Panel):
+    bl_label = "Advanced"      # Title of the subpanel
+    bl_idname = "OBJECT_PT_Advanced"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = 'render'
+    bl_parent_id = "RENDER_PT_custom_bake_tools" # Connects to the main panel
+    bl_options = {'DEFAULT_CLOSED'}    # Starts collapsed; remove to start open
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        if not hasattr(scene, "better_baker_settings"):
+            layout.label(text="Settings missing", icon='ERROR')
+            return
+
+        settings = scene.better_baker_settings
+        
+        layout.prop(settings, "use_udims", text="Use UDIMs")
+        layout.prop(settings, "save_to_folder", text="Save to Folder")
+        layout.prop(settings, "export_folder", text="Output Directory")
+
 # --- REGISTER REGION ---
 preview_collections = {}
 classes = (
@@ -379,12 +419,12 @@ classes = (
     BAKER_UL_texture_list,
     BAKER_MT_texture_select_menu,
     RENDER_PT_custom_bake_tools,
+    OBJECT_PT_Advanced,
 )
 
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
-        
     bpy.types.Scene.better_baker_settings = bpy.props.PointerProperty(type=BetterBakerSettings)
     bpy.types.Scene.better_baker_textures = bpy.props.CollectionProperty(type=BetterBakerTextureItem)
     bpy.types.Scene.better_baker_idx = bpy.props.IntProperty(default=0)

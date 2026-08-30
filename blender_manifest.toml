@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "thebetterbaker"
-version = "4.1.0"
+version = "5.0.0"
 name = "The Better Baker - PBR Baker"
 tagline = "A PBR baker for multiple objects and complex materials"
 maintainer = "Chaim Mendes"
@@ -13,6 +13,8 @@ website = "https://thebetterbaker.github.io/"
 tags = ["Bake"]
 
 blender_version_min = "5.1.0"
+
+permissions = ["files"]
 
 # Max Currently Unknown
 # tested variants
