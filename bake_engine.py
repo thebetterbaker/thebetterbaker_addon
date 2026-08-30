@@ -83,6 +83,21 @@ def trace_channel_source(socket, target_channel, tree):
     
     return from_socket
 
+def get_used_udim_tiles(objects):
+    """Scans each object's active UV layer and returns the sorted list of
+    UDIM tile numbers (1001, 1002, ...) touched by any UV coordinate.
+    Falls back to [1001] if nothing is found, so callers always get a usable list."""
+    tiles = set()
+    for obj in objects:
+        if obj.type != 'MESH' or not obj.data.uv_layers.active:
+            continue
+        for uv in obj.data.uv_layers.active.data:
+            u, v = uv.uv
+            tile_u = int(u) if u >= 0 else int(u) - 1
+            tile_v = int(v) if v >= 0 else int(v) - 1
+            tiles.add(1001 + tile_u + tile_v * 10)
+    return sorted(tiles) if tiles else [1001]
+
 def bake_single_map(texture_item, resolution_mode, settings, prefix, objects=None):
     scene = bpy.context.scene
     scene.render.engine = 'CYCLES'
@@ -90,6 +105,7 @@ def bake_single_map(texture_item, resolution_mode, settings, prefix, objects=Non
     # Set bake margin to prevent texture bleeding
     bake_margin = getattr(settings, 'bake_margin', 0)
     scene.render.bake.margin = bake_margin
+    scene.render.use_persistent_data = False
     
     # Calculate separate independent dimension parameters
     if resolution_mode == '1K': res_w, res_h = 1024, 1024
@@ -112,32 +128,57 @@ def bake_single_map(texture_item, resolution_mode, settings, prefix, objects=Non
     ui_name = texture_item.name  
     image_name = f"{prefix}_{ui_name.replace(' ', '_')}"
     
-    if image_name in bpy.data.images:
-        bake_image = bpy.data.images[image_name]
-        # Ensure the existing image matches the requested size. Some Blender
-        # image scale operations don't reliably resize baked-images in all
-        # contexts, which can leave old (e.g. 4K) images active. If the sizes
-        # differ, remove and recreate the image to guarantee correct resolution.
-        try:
-            current_size = (bake_image.size[0], bake_image.size[1])
-        except Exception:
-            # Fallback in case the image API differs; try width/height attrs
+    use_udims = getattr(settings, 'use_udims', False)
+
+    if use_udims:
+        # --- UDIM PATH (contained): creates/updates a tiled image instead ---
+        udim_tiles = get_used_udim_tiles(objects)
+
+        bake_image = bpy.data.images.get(image_name)
+        if bake_image and bake_image.source != 'TILED':
+            # A non-tiled image exists with this name from a prior non-UDIM bake — replace it
+            bpy.data.images.remove(bake_image)
+            bake_image = None
+
+        if bake_image is None:
+            bake_image = bpy.data.images.new(image_name, width=res_w, height=res_h, tiled=True)
+
+        existing_tile_numbers = {t.number for t in bake_image.tiles}
+
+        for tile_number in udim_tiles:
+            if tile_number not in existing_tile_numbers:
+                bake_image.tiles.new(tile_number=tile_number)
+        for tile in bake_image.tiles:
+            if tile.number in udim_tiles:
+                bake_image.tiles.active = tile
+                with bpy.context.temp_override(edit_image=bake_image):
+                    bpy.ops.image.tile_fill(
+                        color=(0.0, 0.0, 0.0, 1.0),
+                        width=res_w,
+                        height=res_h,
+                    )
+        bake_image.update()
+    else:
+        if image_name in bpy.data.images:
+            bake_image = bpy.data.images[image_name]
             try:
                 current_size = (bake_image.size[0], bake_image.size[1])
             except Exception:
-                current_size = None
+                try:
+                    current_size = (bake_image.size[0], bake_image.size[1])
+                except Exception:
+                    current_size = None
 
-        if current_size is None or current_size != (res_w, res_h):
-            try:
-                bpy.data.images.remove(bake_image)
-            except Exception:
+            if current_size is None or current_size != (res_w, res_h):
+                try:
+                    bpy.data.images.remove(bake_image)
+                except Exception:
+                    pass
+                bake_image = bpy.data.images.new(image_name, width=res_w, height=res_h)
+            else:
                 pass
-            bake_image = bpy.data.images.new(image_name, width=res_w, height=res_h)
         else:
-            # image already matches requested size; keep it
-            pass
-    else:
-        bake_image = bpy.data.images.new(image_name, width=res_w, height=res_h)
+            bake_image = bpy.data.images.new(image_name, width=res_w, height=res_h)
     
     # Set proper non-color channel designations
     non_color_maps = {"Normal", "Roughness", "Metallic", "Clearcoat Weight", 
@@ -185,9 +226,13 @@ def bake_single_map(texture_item, resolution_mode, settings, prefix, objects=Non
             }
 
             if ui_name in non_color_channels:
-                # Pre-fill flat float list efficiently
                 initial_pixels = [0.5, 0.5, 0.5, 1.0] * (res_w * res_h)
-                bake_image.pixels.foreach_set(initial_pixels)
+                if use_udims:
+                    for tile in bake_image.tiles:
+                        bake_image.tiles.active = tile
+                        bake_image.pixels.foreach_set(initial_pixels)
+                else:
+                    bake_image.pixels.foreach_set(initial_pixels)
                 bake_image.update()
             else:
                 scene.render.bake.use_clear = True
@@ -284,7 +329,13 @@ def bake_single_map(texture_item, resolution_mode, settings, prefix, objects=Non
             bake_type_to_use = 'NORMAL'
             scene.render.bake.normal_space = 'TANGENT'
             normal_color = (0.5, 0.5, 1.0, 1.0)
-            bake_image.pixels.foreach_set(normal_color * (res_w * res_h))
+            if use_udims:
+                flat = normal_color * (res_w * res_h)
+                for tile in bake_image.tiles:
+                    bake_image.tiles.active = tile
+                    bake_image.pixels.foreach_set(flat)
+            else:
+                bake_image.pixels.foreach_set(normal_color * (res_w * res_h))
 
             for obj in objects:
                 for slot in obj.material_slots:

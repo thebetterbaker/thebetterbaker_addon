@@ -1,5 +1,6 @@
 import bpy
 import bpy.utils.previews
+import os
 
 # BRING BAKE ENGINE
 from .bake_engine import betterbakerengine
@@ -54,6 +55,33 @@ class BetterBakerSettings(bpy.types.PropertyGroup):
 
 class BetterBakerTextureItem(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="Texture Type")
+
+def save_baked_image(image, settings):
+    """Autosave a freshly baked image if 'Save to Folder' is enabled.
+    No-op otherwise. Handles both plain and UDIM-tiled images."""
+    if not image or not getattr(settings, 'save_to_folder', False):
+        return
+
+    export_dir = bpy.path.abspath(settings.export_folder)
+    try:
+        os.makedirs(export_dir, exist_ok=True)
+    except Exception as e:
+        print(f"[The Better Baker] Could not create export folder: {e}")
+        return
+
+    image.file_format = 'PNG'
+
+    if image.source == 'TILED':
+        # Blender writes one file per tile, substituting <UDIM> for the tile number
+        image.filepath_raw = os.path.join(export_dir, f"{image.name}.<UDIM>.png")
+    else:
+        image.filepath_raw = os.path.join(export_dir, f"{image.name}.png")
+
+    try:
+        image.save()
+    except Exception as e:
+        print(f"[The Better Baker] Autosave failed for '{image.name}': {e}")
+
 
 def spawn_image_viewer(context, image):
     # 1. Search current screen areas first
@@ -156,7 +184,7 @@ class BAKER_OT_render_bake(bpy.types.Operator):
                 # Image Viewer window
                 if bake_image:
                     spawn_image_viewer(context, bake_image)
-
+                    save_baked_image(bake_image, settings)
             except Exception as e:
                 self.report({'ERROR'}, f"Baking run encountered an error: {str(e)}")
                 return self.cancel(context)
@@ -220,6 +248,7 @@ class BAKER_OT_bake_single_material(bpy.types.Operator):
                 # Image Viewer window
                 if bake_image:
                     spawn_image_viewer(context, bake_image)
+                    save_baked_image(bake_image, settings)
 
             except Exception as e:
                 self.report({'ERROR'}, f"Baking run encountered an error: {str(e)}")
