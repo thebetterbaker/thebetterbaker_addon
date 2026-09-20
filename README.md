@@ -6,8 +6,8 @@ This is a Blender addon that allows users to easily bake textures for their 3D m
 
 The whole documentation can be found [here](https://thebetterbaker.github.io/docs/).
 
-Download the latest version of the addon from the [official website](https://thebetterbaker.github.io/).
+Download the latest version of the addon from the [Blender Extensions.](https://extensions.blender.org/add-ons/thebetterbaker/).
 
-Find older versions on the [releases page](https://github.com/thebetterbaker/thebetterbaker_addon/releases).
+Download the older versions(or the latest version) of the addon from [GitHub.](https://github.com/thebetterbaker/thebetterbaker_addon/releases).
 
-Report a bug or request a feature on the [issues page](https://github.com/thebetterbaker/thebetterbaker_addon/issues).
+Report a bug or request a feature on the [issues page.](https://github.com/thebetterbaker/thebetterbaker_addon/issues).
