@@ -192,6 +192,7 @@ def bake_single_map(texture_item, resolution_mode, settings, prefix, objects=Non
         
     # --- FIX: Define mat_data HERE (Outside and completely before the try block) ---
     mat_data = {}
+    created_temp_nodes = []
 
     socket_mapping = {
         "Base Color": "Base Color",
@@ -237,9 +238,16 @@ def bake_single_map(texture_item, resolution_mode, settings, prefix, objects=Non
             else:
                 scene.render.bake.use_clear = True
 
+            solved_materials = []
             for obj in objects:
                 # print(f"Checking Object: {obj.name}")
                 for slot in obj.material_slots:
+                    if slot.material is None:
+                        print(f"  Skipped: Slot is empty")
+                        continue
+                    if slot.material.name in solved_materials:
+                        print(f"  Skipped: Material '{slot.material.name}' already processed")
+                        continue
                     mat = slot.material
                     # if not mat: 
                     #     print(f"  Skipped: Slot is empty")
@@ -266,6 +274,7 @@ def bake_single_map(texture_item, resolution_mode, settings, prefix, objects=Non
                     node_tex = nodes.new(type='ShaderNodeTexImage')
                     node_tex.image = bake_image
                     nodes.active = node_tex
+                    created_temp_nodes.extend((node_emit, node_tex))
                     # print(f"    Created temporary nodes successfully!")
                     
                     # Store data for cleanup later
@@ -323,6 +332,7 @@ def bake_single_map(texture_item, resolution_mode, settings, prefix, objects=Non
                     print(f"Surface now linked: {node_output.inputs['Surface'].is_linked}")
                     print(f"Surface linked to: {node_output.inputs['Surface'].links}")
                     print(f"    Nodes linked and ready to bake.")
+                    solved_materials.append(slot.material.name)
 
         # --- CONDITION B: NATIVE NORMALS ---
         else:
@@ -346,6 +356,7 @@ def bake_single_map(texture_item, resolution_mode, settings, prefix, objects=Non
                     node_tex = nodes.new(type='ShaderNodeTexImage')
                     node_tex.image = bake_image
                     nodes.active = node_tex
+                    created_temp_nodes.append(node_tex)
                     mat_data[mat.name] = (None, None, node_tex)
 
         # Ensure all objects have UV layers
@@ -370,18 +381,28 @@ def bake_single_map(texture_item, resolution_mode, settings, prefix, objects=Non
                 if out:
                     m.node_tree.links.new(orig_link, out.inputs['Surface'])
 
-            # Remove temporary bake nodes created for this material
-            for temp_node in (temp_emit, temp_tex):
-                if temp_node and temp_node.name in m.node_tree.nodes:
+        # Sweep every material used by the bake. A material can occupy multiple
+        # slots, and Blender suffixes duplicate temporary node names.
+        materials_to_clean = []
+        for obj in objects:
+            for slot in obj.material_slots:
+                if slot.material and slot.material not in materials_to_clean:
+                    materials_to_clean.append(slot.material)
+        for mat_name in mat_data:
+            material = bpy.data.materials.get(mat_name)
+            if material and material not in materials_to_clean:
+                materials_to_clean.append(material)
+
+        for material in materials_to_clean:
+            if not material.use_nodes:
+                continue
+            for node in list(material.node_tree.nodes):
+                if (node in created_temp_nodes or
+                        node.name.startswith("TEMP_BAKE_MIX")):
                     try:
-                        m.node_tree.nodes.remove(temp_node)
+                        material.node_tree.nodes.remove(node)
                     except Exception:
                         pass
-
-            # Clean up any TEMP_BAKE_MIX nodes left by trace_channel_source
-            for node in list(m.node_tree.nodes):
-                if node.name == "TEMP_BAKE_MIX":
-                    m.node_tree.nodes.remove(node)
 
     return bake_image
 
