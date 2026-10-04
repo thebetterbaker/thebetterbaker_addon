@@ -103,9 +103,9 @@ def bake_single_map(texture_item, resolution_mode, settings, prefix, objects=Non
     scene.render.engine = 'CYCLES'
     
     # Set bake margin to prevent texture bleeding
-    bake_margin = getattr(settings, 'bake_margin', 0)
+    bake_margin = getattr(settings, 'bakemargins', 0)
     scene.render.bake.margin = bake_margin
-    scene.render.use_persistent_data = False
+    scene.render.use_persistent_data = True
     
     # Calculate separate independent dimension parameters
     if resolution_mode == '1K': res_w, res_h = 1024, 1024

@@ -19,10 +19,10 @@ class BetterBakerSettings(bpy.types.PropertyGroup):
     )
     
     custom_width: bpy.props.IntProperty(
-        name="Width", default=2048, min=16, max=16384
+        name="Width", default=2048, min=16, max=1638400
     )
     custom_height: bpy.props.IntProperty(
-        name="Height", default=2048, min=16, max=16384
+        name="Height", default=2048, min=16, max=1638400
     )
     prefix: bpy.props.StringProperty(
         name="Prefix", default="tex_"
@@ -51,6 +51,10 @@ class BetterBakerSettings(bpy.types.PropertyGroup):
         description="Select folder to save baked maps",
         subtype='DIR_PATH',
         default="/tmp/"
+    )
+
+    bakemargins: bpy.props.IntProperty(
+        name="Bake Margins", default=0, min=0, max=16000
     )
 
 class BetterBakerTextureItem(bpy.types.PropertyGroup):
@@ -203,6 +207,8 @@ class BAKER_OT_render_bake(bpy.types.Operator):
             self.report({'WARNING'}, "Select mesh objects to bake!")
             return {'CANCELLED'}
 
+        self.report({'INFO'}, "Working on it......")
+        
         self._queue = [item for item in scene.better_baker_textures]
         self._total_maps = len(self._queue)
 
@@ -289,6 +295,8 @@ class BAKER_OT_bake_single_material(bpy.types.Operator):
             plane_obj.data.materials.append(mat)
         else:
             plane_obj.data.materials[0] = mat
+
+        self.report({'INFO'}, "Working on it......")
         
         self._queue = [item for item in scene.better_baker_textures]
         self._total_maps = len(self._queue)
@@ -435,6 +443,7 @@ class OBJECT_PT_Advanced(bpy.types.Panel):
         layout.prop(settings, "use_udims", text="Use UDIMs")
         layout.prop(settings, "save_to_folder", text="Save to Folder")
         layout.prop(settings, "export_folder", text="Output Directory")
+        layout.prop(settings, "bakemargins", text="Bake Margins")
 
 # --- REGISTER REGION ---
 preview_collections = {}
